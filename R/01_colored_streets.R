@@ -54,9 +54,12 @@ allroads <- st_intersection(circle, allroads)
 
 ## removing unnamed footpaths
 
-allroads <- allroads %>% 
-  filter(fclass == "footway",
-         !is.na(name))
+allroads_m <- allroads %>%
+  filter(!(fclass == "footway" & is.na(name)),
+         fclass %in% c("motorway", "secondary", "tertiary", "primary", "service", 'residential', 'path', 'footway'))
+
+allroads_e <- allroads[!(allroads$fclass  == "footway" & is.na(allroads$name)),]
+
 
 ## add in length
 
@@ -115,4 +118,4 @@ blankbg <-theme(axis.line=element_blank(),axis.text.x=element_blank(),
 
 ggplot() + blankbg + theme(panel.grid.major = element_line(colour = "transparent")) + 
   # geom_sf(data=otherroads, size = .8) + 
-  geom_sf(data=allroads, size =1) 
+  geom_sf(data=allroads_m, size =1) 

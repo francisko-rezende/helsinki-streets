@@ -1,0 +1,175 @@
+---
+title: "Helsinki streets"
+author: "Francisko de Moraes Rezende"
+date: ""
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE)
+```
+
+```{r packages}
+library(tidyverse)
+library(sf)
+library(ggtext)
+library(showtext)
+library(osmdata)
+
+font_add_google("Oswald", "Oswald")
+
+theme_set(theme_void())
+
+theme_update(
+  panel.background = element_rect(fill = "white", 
+                                  color = "white"),
+  panel.border = element_blank(),
+  plot.background = element_rect(fill = "white", 
+                                 color = "grey60",
+                                 size = 7),
+  plot.margin = margin(20, 30, 20, 30),
+  plot.title = element_text(family = "Oswald", 
+                            color = "grey20",
+                            size = 54,
+                            face = "bold",
+                            hjust = 0.5,
+                            margin = margin(t = 20, b = 2)),
+  plot.caption = element_markdown(family = "Oswald", 
+                              color = "grey60",
+                              size = 9,
+                              hjust = 0,
+                              lineheight = 1.5,
+                              margin = margin(0, 12, 6, 200)),
+  legend.position = "bottom",
+  legend.box.spacing = unit(0.2, "cm"), 
+  legend.key = element_rect(fill = NA, color = NA), 
+  legend.key.size = unit(1, "lines"),
+  legend.text = element_text(family = "Oswald", 
+                             color = "grey60",
+                             size = 12,
+                             face = "bold")
+)
+
+theme_update(
+    axis.line = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background = element_blank()
+  )
+```
+
+
+
+```{r loading data}
+load(here::here('data', 'cooked', '01_raut_geocode.RData'))
+
+city <- 'helsinki'
+lat <- raut_geocode$coords['y']
+long <- raut_geocode$coords['x']
+rad <- 12000
+crs <- 102013
+
+allroads <- sf::read_sf(here::here('data', 'raw', 'osm'), 'gis_osm_roads_free_1')
+
+## subsetting roads in a circle
+
+pt <- data.frame(lat = lat, long = long) %>% 
+  st_as_sf(coords = c('long', 'lat'), 
+           crs = 4326) %>% 
+  st_transform(crs)
+
+circle <- st_buffer(pt, dist = rad) %>% 
+  st_transform(st_crs(allroads))
+
+allroads <- sf::st_intersection(circle, allroads)
+```
+```{r waterways}
+feat <- sf::read_sf(here::here('data', 'raw', 'osm'), 'gis_osm_water_a_free_1') %>% 
+  st_intersection(circle, .)
+
+ggplot() +
+  geom_sf(data = feat, fill = 'blue')
+
+unique(feat$fclass)
+```
+
+```{r}
+library(osmdata)
+
+water <- getbb("Helsinki Finland") %>%
+  opq() %>%
+  add_osm_feature(
+    key = "natural",
+    value = c("water",
+              'bay')
+  ) %>%
+  osmdata_sf()
+
+ggplot() +
+  geom_sf(data = feat, fill = 'blue', color = 'blue')
+
+glimpse(water)
+```
+
+
+```{r data preparation}
+
+allroads_plot <- allroads %>% 
+  filter(!is.na(name)) %>%
+  # filter(fclass %in% c('cicleway')) %>%
+  dplyr::mutate(type = case_when(
+    str_detect(name, 'tie|Tie') ~ 'tie',
+    str_detect(name, 'katu') ~ 'katu',
+    str_detect(name, 'kuja|Kuja') ~ 'kuja',
+    str_detect(name, 'polku|Polku') ~ 'polku',
+    str_detect(fclass, 'motorway|trunk|motorway_link|trunk_link') ~ 'moottoritie',
+    # str_detect(name, 'väylä') ~ 'moottoritie',
+    TRUE ~ 'other'
+  )) %>% 
+  mutate(type = factor(type, levels = c(
+    'moottoritie',
+    'katu',
+    'kuja',
+    'polku',
+    'tie',
+    'other'
+  )))
+
+
+```
+
+
+```{r plot}
+colors_2 <- c(
+  '#d62828', #amaranth_red
+  '#2176ae', #green_blue
+  '#32936f', #iluminating_emerald
+  "#55dde0", #tuquoise
+  '#ffbf00', #fluorescent orange,
+  'grey70'
+)
+
+map <- ggplot() +
+  geom_sf(data = allroads_plot, size = .4, 
+          aes(color = type),
+          show.legend = 'point') +
+  scale_color_manual(values = colors_2) +
+  guides(color = guide_legend(title.position = "top", 
+                              title.hjust = 0.5, nrow = 1,
+                              label.position = "right",
+                              override.aes = list(size = 7.5))) +
+  # theme(legend.position = "bottom") +
+  labs(title = 'Helsinki streets') 
+
+ggsave(here::here('products', paste0(city, '_', rad, 'km_rad', '.pdf')), 
+       width = 12, height = 11.63, device = cairo_pdf, plot = map)
+```
+
